@@ -22,9 +22,9 @@ export default function Home() {
               key={i}
               className="absolute w-2 h-2 bg-indigo-400/30 dark:bg-indigo-400/20 rounded-full particle"
               style={{
-                left: `${Math.random() * 100}%`,
+                left: `${[65.72, 27.19, 99.58, 21.73, 32.89, 51.34, 70.05, 26.14][i]}%`,
                 animationDelay: `${i * 2.5}s`,
-                animationDuration: `${15 + Math.random() * 10}s`
+                animationDuration: `${[23.60, 21.15, 21.90, 22.34, 17.75, 16.58, 20.61, 21.45][i]}s`
               }}
             />
           ))}
