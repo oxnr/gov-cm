@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 import { ContractFilters, ContractsResponse } from '@/types/contract';
 import { calculateDistance, getContractCoordinates } from '@/lib/geo';
 
@@ -32,172 +32,100 @@ export async function GET(request: NextRequest) {
     const locationLng = searchParams.get('location_lng') ? parseFloat(searchParams.get('location_lng')!) : undefined;
     const locationRadius = searchParams.get('location_radius') ? parseFloat(searchParams.get('location_radius')!) : undefined;
 
-    // Build the WHERE clause
-    const whereConditions: string[] = [];
-    const queryParams: any[] = [];
-    let paramCounter = 1;
+    // Build query
+    let query = supabase
+      .from('contracts')
+      .select('*', { count: 'exact' });
 
+    // Apply filters
     if (filters.keyword) {
-      whereConditions.push(`(
-        title ILIKE $${paramCounter} OR 
-        description ILIKE $${paramCounter} OR 
-        department_agency ILIKE $${paramCounter} OR
-        sub_tier ILIKE $${paramCounter} OR
-        office ILIKE $${paramCounter}
-      )`);
-      queryParams.push(`%${filters.keyword}%`);
-      paramCounter++;
+      query = query.or(`title.ilike.%${filters.keyword}%,description.ilike.%${filters.keyword}%,department_agency.ilike.%${filters.keyword}%,sub_tier.ilike.%${filters.keyword}%,office.ilike.%${filters.keyword}%`);
     }
 
     if (filters.type) {
-      whereConditions.push(`type = $${paramCounter}`);
-      queryParams.push(filters.type);
-      paramCounter++;
+      query = query.eq('type', filters.type);
     }
 
     if (filters.department_agency) {
-      whereConditions.push(`department_agency = $${paramCounter}`);
-      queryParams.push(filters.department_agency);
-      paramCounter++;
+      query = query.eq('department_agency', filters.department_agency);
     }
 
     if (filters.sub_tier) {
-      whereConditions.push(`sub_tier = $${paramCounter}`);
-      queryParams.push(filters.sub_tier);
-      paramCounter++;
+      query = query.eq('sub_tier', filters.sub_tier);
     }
 
     if (filters.set_aside) {
-      whereConditions.push(`set_aside = $${paramCounter}`);
-      queryParams.push(filters.set_aside);
-      paramCounter++;
+      query = query.eq('set_aside', filters.set_aside);
     }
 
     if (filters.naics_code) {
-      whereConditions.push(`naics_code LIKE $${paramCounter}`);
-      queryParams.push(`${filters.naics_code}%`);
-      paramCounter++;
+      query = query.eq('naics_code', filters.naics_code);
     }
 
     if (filters.state) {
-      whereConditions.push(`state = $${paramCounter}`);
-      queryParams.push(filters.state);
-      paramCounter++;
+      query = query.eq('state', filters.state);
     }
 
     if (filters.city) {
-      whereConditions.push(`city = $${paramCounter}`);
-      queryParams.push(filters.city);
-      paramCounter++;
+      query = query.ilike('city', `${filters.city}%`);
     }
 
     if (filters.posted_date_from) {
-      whereConditions.push(`posted_date >= $${paramCounter}`);
-      queryParams.push(filters.posted_date_from);
-      paramCounter++;
+      query = query.gte('posted_date', filters.posted_date_from);
     }
 
     if (filters.posted_date_to) {
-      whereConditions.push(`posted_date <= $${paramCounter}`);
-      queryParams.push(filters.posted_date_to);
-      paramCounter++;
+      query = query.lte('posted_date', filters.posted_date_to);
     }
 
     if (filters.response_deadline_from) {
-      whereConditions.push(`response_deadline >= $${paramCounter}`);
-      queryParams.push(filters.response_deadline_from);
-      paramCounter++;
+      query = query.gte('response_deadline', filters.response_deadline_from);
     }
 
     if (filters.response_deadline_to) {
-      whereConditions.push(`response_deadline <= $${paramCounter}`);
-      queryParams.push(filters.response_deadline_to);
-      paramCounter++;
+      query = query.lte('response_deadline', filters.response_deadline_to);
     }
 
-    // Add filter for award amount if requested
-    if (searchParams.get('has_award_amount') === 'true') {
-      whereConditions.push(`award_amount IS NOT NULL AND award_amount > 0`);
+    // Apply sorting
+    const sortColumn = filters.sort_by || 'posted_date';
+    const ascending = filters.sort_order === 'asc';
+    query = query.order(sortColumn, { ascending, nullsFirst: false });
+
+    // Apply pagination
+    const offset = (filters.page - 1) * filters.limit;
+    query = query.range(offset, offset + filters.limit - 1);
+
+    // Execute query
+    const { data: contracts, error, count } = await query;
+
+    if (error) {
+      throw error;
     }
 
-    const whereClause = whereConditions.length > 0 
-      ? `WHERE ${whereConditions.join(' AND ')}` 
-      : '';
-
-    // Get total count
-    const countQuery = `SELECT COUNT(*) FROM contracts ${whereClause}`;
-    const countResult = await pool.query(countQuery, queryParams);
-    const total = parseInt(countResult.rows[0].count);
-
-    // Calculate pagination
-    const offset = (filters.page! - 1) * filters.limit!;
-    const totalPages = Math.ceil(total / filters.limit!);
-
-    // Get contracts - if location filtering, we need to get more and filter in memory
-    let contractsQuery: string;
-    let contractsToFetch = filters.limit!;
-    let fetchOffset = offset;
-    
+    // Apply location-based filtering if needed
+    let filteredContracts = contracts || [];
     if (locationLat && locationLng && locationRadius) {
-      // For location filtering, fetch more records to account for filtering
-      contractsToFetch = filters.limit! * 10; // Fetch 10x to ensure we have enough after filtering
-      contractsQuery = `
-        SELECT * FROM contracts 
-        ${whereClause}
-        ORDER BY ${filters.sort_by} ${filters.sort_order}
-        LIMIT $${paramCounter} OFFSET $${paramCounter + 1}
-      `;
-    } else {
-      contractsQuery = `
-        SELECT * FROM contracts 
-        ${whereClause}
-        ORDER BY ${filters.sort_by} ${filters.sort_order}
-        LIMIT $${paramCounter} OFFSET $${paramCounter + 1}
-      `;
-    }
-    
-    queryParams.push(contractsToFetch, fetchOffset);
-    
-    let contractsResult = await pool.query(contractsQuery, queryParams);
-    let contracts = contractsResult.rows;
-    
-    // Apply location filtering if needed
-    if (locationLat && locationLng && locationRadius) {
-      contracts = contracts.filter(contract => {
-        const coords = getContractCoordinates(contract.city, contract.state);
+      filteredContracts = contracts?.filter(contract => {
+        const coords = getContractCoordinates(contract);
         if (!coords) return false;
         
-        const distance = calculateDistance(locationLat, locationLng, coords.lat, coords.lng);
+        const distance = calculateDistance(
+          locationLat,
+          locationLng,
+          coords.lat,
+          coords.lng
+        );
+        
         return distance <= locationRadius;
-      });
-      
-      // If we don't have enough after filtering, fetch more
-      while (contracts.length < filters.limit! && contractsResult.rows.length === contractsToFetch) {
-        fetchOffset += contractsToFetch;
-        queryParams[queryParams.length - 1] = fetchOffset;
-        contractsResult = await pool.query(contractsQuery, queryParams);
-        
-        const moreContracts = contractsResult.rows.filter(contract => {
-          const coords = getContractCoordinates(contract.city, contract.state);
-          if (!coords) return false;
-          
-          const distance = calculateDistance(locationLat, locationLng, coords.lat, coords.lng);
-          return distance <= locationRadius;
-        });
-        
-        contracts = [...contracts, ...moreContracts];
-      }
-      
-      // Trim to requested limit
-      contracts = contracts.slice(0, filters.limit!);
+      }) || [];
     }
 
     const response: ContractsResponse = {
-      contracts,
-      total,
-      page: filters.page!,
-      limit: filters.limit!,
-      total_pages: totalPages,
+      contracts: filteredContracts,
+      totalCount: count || 0,
+      page: filters.page,
+      limit: filters.limit,
+      totalPages: Math.ceil((count || 0) / filters.limit),
     };
 
     return NextResponse.json(response);

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { X, CircleNotch, CurrencyDollar, Calendar, Buildings } from '@phosphor-icons/react';
+import { useState, useEffect, useCallback } from 'react';
+import { X, CircleNotch } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 
@@ -35,13 +35,7 @@ export default function SpendDetailModal({ isOpen, onClose, title, filters }: Sp
   const [total, setTotal] = useState(0);
   const pageSize = 50;
 
-  useEffect(() => {
-    if (isOpen) {
-      fetchContracts();
-    }
-  }, [isOpen, page]);
-
-  const fetchContracts = async () => {
+  const fetchContracts = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({
@@ -72,7 +66,13 @@ export default function SpendDetailModal({ isOpen, onClose, title, filters }: Sp
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, filters, pageSize]);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchContracts();
+    }
+  }, [isOpen, fetchContracts]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {

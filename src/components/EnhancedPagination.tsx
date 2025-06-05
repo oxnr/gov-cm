@@ -18,14 +18,20 @@ export default function EnhancedPagination({
   onPageChange,
   onPageSizeChange 
 }: EnhancedPaginationProps) {
-  const startItem = (currentPage - 1) * pageSize + 1;
-  const endItem = Math.min(currentPage * pageSize, totalItems);
+  // Ensure we have valid numbers
+  const safeCurrentPage = Number(currentPage) || 1;
+  const safePageSize = Number(pageSize) || 25;
+  const safeTotalItems = Number(totalItems) || 0;
+  const safeTotalPages = Number(totalPages) || 1;
+  
+  const startItem = safeTotalItems > 0 ? (safeCurrentPage - 1) * safePageSize + 1 : 0;
+  const endItem = Math.min(safeCurrentPage * safePageSize, safeTotalItems);
   
   const pages = [];
   const maxVisiblePages = 5;
 
-  let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-  let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+  let startPage = Math.max(1, safeCurrentPage - Math.floor(maxVisiblePages / 2));
+  const endPage = Math.min(safeTotalPages, startPage + maxVisiblePages - 1);
 
   if (endPage - startPage + 1 < maxVisiblePages) {
     startPage = Math.max(1, endPage - maxVisiblePages + 1);
@@ -39,9 +45,15 @@ export default function EnhancedPagination({
     <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700">
       <div className="flex items-center gap-6">
         <div className="text-sm text-gray-700 dark:text-gray-300">
-          Showing <span className="font-medium">{startItem}</span> to{' '}
-          <span className="font-medium">{endItem}</span> of{' '}
-          <span className="font-medium">{totalItems}</span> results
+          {safeTotalItems > 0 ? (
+            <>
+              Showing <span className="font-medium">{startItem}</span> to{' '}
+              <span className="font-medium">{endItem}</span> of{' '}
+              <span className="font-medium">{safeTotalItems}</span> results
+            </>
+          ) : (
+            'No results found'
+          )}
         </div>
         
         <div className="flex items-center gap-2">
@@ -63,10 +75,10 @@ export default function EnhancedPagination({
         {/* First page */}
         <button
           onClick={() => onPageChange(1)}
-          disabled={currentPage === 1}
+          disabled={safeCurrentPage === 1}
           className={cn(
             "p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
-            currentPage === 1 && "opacity-50 cursor-not-allowed hover:bg-transparent"
+            safeCurrentPage === 1 && "opacity-50 cursor-not-allowed hover:bg-transparent"
           )}
           title="First page"
         >
@@ -75,11 +87,11 @@ export default function EnhancedPagination({
 
         {/* Previous page */}
         <button
-          onClick={() => onPageChange(currentPage - 1)}
-          disabled={currentPage === 1}
+          onClick={() => onPageChange(safeCurrentPage - 1)}
+          disabled={safeCurrentPage === 1}
           className={cn(
             "p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
-            currentPage === 1 && "opacity-50 cursor-not-allowed hover:bg-transparent"
+            safeCurrentPage === 1 && "opacity-50 cursor-not-allowed hover:bg-transparent"
           )}
           title="Previous page"
         >
@@ -108,7 +120,7 @@ export default function EnhancedPagination({
               onClick={() => onPageChange(page)}
               className={cn(
                 "px-3 py-1.5 text-sm rounded-lg transition-all duration-200",
-                page === currentPage
+                page === safeCurrentPage
                   ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md"
                   : "hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
               )}
@@ -117,16 +129,16 @@ export default function EnhancedPagination({
             </button>
           ))}
 
-          {endPage < totalPages && (
+          {endPage < safeTotalPages && (
             <>
-              {endPage < totalPages - 1 && (
+              {endPage < safeTotalPages - 1 && (
                 <span className="px-2 text-gray-400 dark:text-gray-600">•••</span>
               )}
               <button
-                onClick={() => onPageChange(totalPages)}
+                onClick={() => onPageChange(safeTotalPages)}
                 className="px-3 py-1.5 text-sm rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
               >
-                {totalPages}
+                {safeTotalPages}
               </button>
             </>
           )}
@@ -134,11 +146,11 @@ export default function EnhancedPagination({
 
         {/* Next page */}
         <button
-          onClick={() => onPageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(safeCurrentPage + 1)}
+          disabled={safeCurrentPage === safeTotalPages}
           className={cn(
             "p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
-            currentPage === totalPages && "opacity-50 cursor-not-allowed hover:bg-transparent"
+            safeCurrentPage === safeTotalPages && "opacity-50 cursor-not-allowed hover:bg-transparent"
           )}
           title="Next page"
         >
@@ -147,11 +159,11 @@ export default function EnhancedPagination({
 
         {/* Last page */}
         <button
-          onClick={() => onPageChange(totalPages)}
-          disabled={currentPage === totalPages}
+          onClick={() => onPageChange(safeTotalPages)}
+          disabled={safeCurrentPage === safeTotalPages}
           className={cn(
             "p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors",
-            currentPage === totalPages && "opacity-50 cursor-not-allowed hover:bg-transparent"
+            safeCurrentPage === safeTotalPages && "opacity-50 cursor-not-allowed hover:bg-transparent"
           )}
           title="Last page"
         >

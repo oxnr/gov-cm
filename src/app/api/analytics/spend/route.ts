@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,142 +10,267 @@ export async function GET(request: NextRequest) {
     const naicsCodes = searchParams.getAll('naics');
     const limit = parseInt(searchParams.get('limit') || '10');
 
-    let query = '';
-    const params: any[] = [];
-    let paramIndex = 1;
-
+    let query;
+    
     if (groupBy === 'geography') {
-      query = `
-        SELECT 
-          c.state as name,
-          s.name as state_name,
-          EXTRACT(YEAR FROM c.posted_date) as year,
-          COUNT(*) as contract_count,
-          SUM(c.award_amount) as total_amount,
-          AVG(c.award_amount) as avg_amount
-        FROM contracts c
-        LEFT JOIN states s ON c.state = s.code
-        WHERE c.award_amount IS NOT NULL 
-          AND c.award_amount > 0
-          AND c.state IS NOT NULL
-          AND c.state != ''
-          AND c.posted_date IS NOT NULL
-      `;
+      // Build the query for geography grouping
+      query = supabase
+        .from('contracts')
+        .select('state, posted_date, award_amount')
+        .not('award_amount', 'is', null)
+        .gt('award_amount', 0)
+        .not('state', 'is', null)
+        .neq('state', '');
 
       if (states.length > 0) {
-        query += ` AND c.state = ANY($${paramIndex}::text[])`;
-        params.push(states);
-        paramIndex++;
+        query = query.in('state', states);
       }
 
-      query += `
-        GROUP BY c.state, s.name, EXTRACT(YEAR FROM c.posted_date)
-        ORDER BY SUM(c.award_amount) DESC
-      `;
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Get state names
+      const stateCodes = [...new Set(data?.map(row => row.state) || [])];
+      const { data: statesData } = await supabase
+        .from('states')
+        .select('code, name')
+        .in('code', stateCodes);
+      
+      const stateNames = new Map(statesData?.map(s => [s.code, s.name]) || []);
+
+      // Process the data to group by state and year
+      const processedData = new Map<string, {
+        name: string;
+        state_name: string;
+        years: Record<string, {contract_count: number; total_amount: number; avg_amount: number}>;
+        total: number;
+        contract_count: number;
+      }>();
+
+      data?.forEach((row: any) => {
+        const year = row.posted_date ? new Date(row.posted_date).getFullYear() : 2020;
+        const key = row.state;
+        
+        if (!processedData.has(key)) {
+          processedData.set(key, {
+            name: key,
+            state_name: stateNames.get(key) || key,
+            years: {},
+            total: 0,
+            contract_count: 0
+          });
+        }
+
+        const entity = processedData.get(key)!;
+        if (!entity.years[year]) {
+          entity.years[year] = {
+            contract_count: 0,
+            total_amount: 0,
+            avg_amount: 0
+          };
+        }
+
+        entity.years[year].contract_count += 1;
+        entity.years[year].total_amount += row.award_amount;
+        entity.total += row.award_amount;
+        entity.contract_count += 1;
+      });
+
+      // Calculate averages
+      processedData.forEach(entity => {
+        Object.keys(entity.years).forEach(year => {
+          entity.years[year].avg_amount = 
+            entity.years[year].total_amount / entity.years[year].contract_count;
+        });
+      });
+
+      // Convert to array and sort
+      const entities = Array.from(processedData.values())
+        .sort((a, b) => b.total - a.total);
+
+      const topEntities = entities.slice(0, limit);
+      const isLimited = entities.length > limit;
+
+      return NextResponse.json({
+        data: topEntities,
+        total: entities.length,
+        isLimited,
+        groupBy
+      });
+
     } else if (groupBy === 'agency') {
-      query = `
-        SELECT 
-          department_agency as name,
-          sub_tier,
-          EXTRACT(YEAR FROM posted_date) as year,
-          COUNT(*) as contract_count,
-          SUM(award_amount) as total_amount,
-          AVG(award_amount) as avg_amount
-        FROM contracts
-        WHERE award_amount IS NOT NULL 
-          AND award_amount > 0
-          AND department_agency IS NOT NULL
-          AND posted_date IS NOT NULL
-      `;
+      // Build the query for agency grouping
+      query = supabase
+        .from('contracts')
+        .select('department_agency, sub_tier, posted_date, award_amount')
+        .not('award_amount', 'is', null)
+        .gt('award_amount', 0)
+        .not('department_agency', 'is', null)
+        .neq('department_agency', '');
 
       if (agencies.length > 0) {
-        query += ` AND department_agency = ANY($${paramIndex}::text[])`;
-        params.push(agencies);
-        paramIndex++;
+        query = query.in('department_agency', agencies);
       }
 
-      query += `
-        GROUP BY department_agency, sub_tier, EXTRACT(YEAR FROM posted_date)
-        ORDER BY SUM(award_amount) DESC
-      `;
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Process the data to group by agency and year
+      const processedData = new Map<string, {
+        name: string;
+        sub_tier?: string;
+        years: Record<string, {contract_count: number; total_amount: number; avg_amount: number}>;
+        total: number;
+        contract_count: number;
+      }>();
+
+      data?.forEach((row: any) => {
+        const year = new Date(row.posted_date).getFullYear();
+        const key = row.department_agency;
+        
+        if (!processedData.has(key)) {
+          processedData.set(key, {
+            name: key,
+            sub_tier: row.sub_tier,
+            years: {},
+            total: 0,
+            contract_count: 0
+          });
+        }
+
+        const entity = processedData.get(key)!;
+        if (!entity.years[year]) {
+          entity.years[year] = {
+            contract_count: 0,
+            total_amount: 0,
+            avg_amount: 0
+          };
+        }
+
+        entity.years[year].contract_count += 1;
+        entity.years[year].total_amount += row.award_amount;
+        entity.total += row.award_amount;
+        entity.contract_count += 1;
+      });
+
+      // Calculate averages
+      processedData.forEach(entity => {
+        Object.keys(entity.years).forEach(year => {
+          entity.years[year].avg_amount = 
+            entity.years[year].total_amount / entity.years[year].contract_count;
+        });
+      });
+
+      // Convert to array and sort
+      const entities = Array.from(processedData.values())
+        .sort((a, b) => b.total - a.total);
+
+      const topEntities = entities.slice(0, limit);
+      const isLimited = entities.length > limit;
+
+      return NextResponse.json({
+        data: topEntities,
+        total: entities.length,
+        isLimited,
+        groupBy
+      });
+
     } else if (groupBy === 'naics') {
-      query = `
-        SELECT 
-          c.naics_code as name,
-          n.title as naics_title,
-          EXTRACT(YEAR FROM c.posted_date) as year,
-          COUNT(*) as contract_count,
-          SUM(c.award_amount) as total_amount,
-          AVG(c.award_amount) as avg_amount
-        FROM contracts c
-        LEFT JOIN naics_codes n ON c.naics_code = n.code
-        WHERE c.award_amount IS NOT NULL 
-          AND c.award_amount > 0
-          AND c.naics_code IS NOT NULL
-          AND c.naics_code != ''
-          AND c.posted_date IS NOT NULL
-      `;
+      // Build the query for NAICS grouping
+      query = supabase
+        .from('contracts')
+        .select('naics_code, posted_date, award_amount')
+        .not('award_amount', 'is', null)
+        .gt('award_amount', 0)
+        .not('naics_code', 'is', null)
+        .neq('naics_code', '');
 
       if (naicsCodes.length > 0) {
-        const naicsPatterns = naicsCodes.map(code => `${code}%`);
-        query += ` AND (`;
-        const conditions = naicsPatterns.map((_, idx) => 
-          `c.naics_code LIKE $${paramIndex + idx}`
-        ).join(' OR ');
-        query += conditions + ')';
-        params.push(...naicsPatterns);
-        paramIndex += naicsPatterns.length;
+        // Use OR conditions for NAICS code patterns
+        const orConditions = naicsCodes.map(code => `naics_code.like.${code}%`).join(',');
+        query = query.or(orConditions);
       }
 
-      query += `
-        GROUP BY c.naics_code, n.title, EXTRACT(YEAR FROM c.posted_date)
-        ORDER BY SUM(c.award_amount) DESC
-      `;
+      const { data, error } = await query;
+      if (error) throw error;
+
+      // Get NAICS titles
+      const naicsCodesList = [...new Set(data?.map(row => row.naics_code) || [])];
+      const { data: naicsData } = await supabase
+        .from('naics_codes')
+        .select('code, title')
+        .in('code', naicsCodesList);
+      
+      const naicsTitles = new Map(naicsData?.map(n => [n.code, n.title]) || []);
+
+      // Process the data to group by NAICS code and year
+      const processedData = new Map<string, {
+        name: string;
+        naics_title?: string;
+        years: Record<string, {contract_count: number; total_amount: number; avg_amount: number}>;
+        total: number;
+        contract_count: number;
+      }>();
+
+      data?.forEach((row: any) => {
+        const year = new Date(row.posted_date).getFullYear();
+        const key = row.naics_code;
+        
+        if (!processedData.has(key)) {
+          processedData.set(key, {
+            name: key,
+            naics_title: naicsTitles.get(key),
+            years: {},
+            total: 0,
+            contract_count: 0
+          });
+        }
+
+        const entity = processedData.get(key)!;
+        if (!entity.years[year]) {
+          entity.years[year] = {
+            contract_count: 0,
+            total_amount: 0,
+            avg_amount: 0
+          };
+        }
+
+        entity.years[year].contract_count += 1;
+        entity.years[year].total_amount += row.award_amount;
+        entity.total += row.award_amount;
+        entity.contract_count += 1;
+      });
+
+      // Calculate averages
+      processedData.forEach(entity => {
+        Object.keys(entity.years).forEach(year => {
+          entity.years[year].avg_amount = 
+            entity.years[year].total_amount / entity.years[year].contract_count;
+        });
+      });
+
+      // Convert to array and sort
+      const entities = Array.from(processedData.values())
+        .sort((a, b) => b.total - a.total);
+
+      const topEntities = entities.slice(0, limit);
+      const isLimited = entities.length > limit;
+
+      return NextResponse.json({
+        data: topEntities,
+        total: entities.length,
+        isLimited,
+        groupBy
+      });
     }
 
-    const result = await pool.query(query, params);
-
-    // Group data by entity and calculate totals
-    const entityMap = new Map<string, any>();
-
-    result.rows.forEach(row => {
-      const key = row.name;
-      if (!entityMap.has(key)) {
-        entityMap.set(key, {
-          name: key,
-          state_name: row.state_name,
-          naics_title: row.naics_title,
-          sub_tier: row.sub_tier,
-          years: {},
-          total: 0,
-          contract_count: 0
-        });
-      }
-
-      const entity = entityMap.get(key);
-      entity.years[row.year] = {
-        contract_count: parseInt(row.contract_count),
-        total_amount: parseFloat(row.total_amount),
-        avg_amount: parseFloat(row.avg_amount)
-      };
-      entity.total += parseFloat(row.total_amount);
-      entity.contract_count += parseInt(row.contract_count);
-    });
-
-    // Convert to array and sort by total
-    let entities = Array.from(entityMap.values())
-      .sort((a, b) => b.total - a.total);
-
-    // Apply limit for graph view
-    const topEntities = entities.slice(0, limit);
-    const isLimited = entities.length > limit;
-
     return NextResponse.json({
-      data: topEntities,
-      total: entities.length,
-      isLimited,
+      data: [],
+      total: 0,
+      isLimited: false,
       groupBy
     });
+
   } catch (error) {
     console.error('Error in spend analysis:', error);
     return NextResponse.json(

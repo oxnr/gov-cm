@@ -8,7 +8,7 @@ import { MapPin, MagnifyingGlass, X } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 
 // Fix for default markers in production
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+delete (L.Icon.Default.prototype as L.Icon.Default & {_getIconUrl?: unknown})._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: '/leaflet/marker-icon-2x.png',
   iconUrl: '/leaflet/marker-icon.png',
@@ -59,8 +59,8 @@ export default function MapRadiusSearch({
   const [radius, setRadius] = useState(initialRadius);
   const [mapCenter, setMapCenter] = useState<[number, number]>([initialLocation.lat, initialLocation.lng]);
   const [address, setAddress] = useState('Washington, DC');
-  const [isSearching, setIsSearching] = useState(false);
-  const searchTimeout = useRef<NodeJS.Timeout>();
+  const [, setIsSearching] = useState(false);
+  const searchTimeout = useRef<NodeJS.Timeout | undefined>(undefined);
 
   // Convert miles to meters for the circle
   const radiusInMeters = radius * 1609.34;
@@ -78,7 +78,7 @@ export default function MapRadiusSearch({
         `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&countrycodes=us&limit=5&addressdetails=1`
       );
       const data = await response.json();
-      setSearchResults(data.map((item: any) => ({
+      setSearchResults(data.map((item: {lat: string; lon: string; display_name: string; address?: Record<string, string>}) => ({
         lat: parseFloat(item.lat),
         lng: parseFloat(item.lon),
         display_name: item.display_name,

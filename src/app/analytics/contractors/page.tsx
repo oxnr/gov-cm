@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { MagnifyingGlass, Buildings, CurrencyDollar, Trophy, Calendar, CircleNotch, Funnel, CaretDown } from '@phosphor-icons/react';
+import { MagnifyingGlass, Buildings, CurrencyDollar, Trophy, CircleNotch, Funnel, CaretDown } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import EnhancedPagination from '@/components/EnhancedPagination';
 import { US_STATES } from '@/lib/states';
@@ -83,14 +83,6 @@ export default function ContractorAnalysisPage() {
     }).format(amount);
   };
 
-  const formatDate = (dateStr: string) => {
-    if (!dateStr) return 'N/A';
-    return new Date(dateStr).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  };
 
   const totalPages = Math.ceil(total / pageSize);
 

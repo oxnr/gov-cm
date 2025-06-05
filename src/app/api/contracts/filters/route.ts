@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 
 export async function GET() {
   try {
@@ -11,27 +11,52 @@ export async function GET() {
       statesResult,
       naicsResult
     ] = await Promise.all([
-      pool.query('SELECT DISTINCT type FROM contracts WHERE type IS NOT NULL ORDER BY type'),
-      pool.query(`
-        SELECT DISTINCT department_agency, sub_tier 
-        FROM contracts 
-        WHERE department_agency IS NOT NULL 
-        ORDER BY department_agency, sub_tier
-      `),
-      pool.query('SELECT DISTINCT set_aside FROM contracts WHERE set_aside IS NOT NULL AND set_aside != \'\' ORDER BY set_aside'),
-      pool.query('SELECT DISTINCT state FROM contracts WHERE state IS NOT NULL ORDER BY state'),
-      pool.query(`
-        SELECT DISTINCT naics_code 
-        FROM contracts 
-        WHERE naics_code IS NOT NULL AND naics_code != '' 
-        ORDER BY naics_code
-        LIMIT 500
-      `)
+      supabase
+        .from('contracts')
+        .select('type')
+        .not('type', 'is', null)
+        .order('type'),
+      supabase
+        .from('contracts')
+        .select('department_agency, sub_tier')
+        .not('department_agency', 'is', null)
+        .order('department_agency')
+        .order('sub_tier'),
+      supabase
+        .from('contracts')
+        .select('set_aside')
+        .not('set_aside', 'is', null)
+        .neq('set_aside', '')
+        .order('set_aside'),
+      supabase
+        .from('contracts')
+        .select('state')
+        .not('state', 'is', null)
+        .order('state'),
+      supabase
+        .from('contracts')
+        .select('naics_code')
+        .not('naics_code', 'is', null)
+        .neq('naics_code', '')
+        .order('naics_code')
+        .limit(500)
     ]);
+
+    if (typesResult.error) throw typesResult.error;
+    if (agenciesResult.error) throw agenciesResult.error;
+    if (setAsidesResult.error) throw setAsidesResult.error;
+    if (statesResult.error) throw statesResult.error;
+    if (naicsResult.error) throw naicsResult.error;
+
+    // Get unique values
+    const uniqueTypes = [...new Set(typesResult.data?.map(r => r.type) || [])];
+    const uniqueSetAsides = [...new Set(setAsidesResult.data?.map(r => r.set_aside) || [])];
+    const uniqueStates = [...new Set(statesResult.data?.map(r => r.state) || [])];
+    const uniqueNaicsCodes = [...new Set(naicsResult.data?.map(r => r.naics_code) || [])];
 
     // Process agencies into hierarchical structure
     const agencyMap = new Map<string, Set<string>>();
-    agenciesResult.rows.forEach(row => {
+    agenciesResult.data?.forEach(row => {
       if (!agencyMap.has(row.department_agency)) {
         agencyMap.set(row.department_agency, new Set());
       }
@@ -46,11 +71,11 @@ export async function GET() {
     }));
 
     return NextResponse.json({
-      types: typesResult.rows.map(r => r.type),
+      types: uniqueTypes,
       agencies,
-      setAsides: setAsidesResult.rows.map(r => r.set_aside),
-      states: statesResult.rows.map(r => r.state),
-      naicsCodes: naicsResult.rows.map(r => r.naics_code)
+      setAsides: uniqueSetAsides,
+      states: uniqueStates,
+      naicsCodes: uniqueNaicsCodes
     });
   } catch (error) {
     console.error('Error fetching filter options:', error);

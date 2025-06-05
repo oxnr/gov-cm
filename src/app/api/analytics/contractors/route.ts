@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import pool from '@/lib/db';
+import { supabase } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,92 +11,103 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '25');
 
-    let query = `
-      SELECT 
-        awardee,
-        state,
-        city,
-        COUNT(*) as award_count,
-        SUM(award_amount) as total_awards,
-        AVG(award_amount) as avg_award_size,
-        MIN(posted_date) as first_award,
-        MAX(posted_date) as last_award
-      FROM contracts
-      WHERE awardee IS NOT NULL 
-        AND awardee != ''
-        AND award_amount IS NOT NULL
-        AND award_amount > 0
-    `;
+    // Build the query
+    let query = supabase
+      .from('contracts')
+      .select('awardee, state, city, award_amount, posted_date', { count: 'exact' })
+      .not('awardee', 'is', null)
+      .neq('awardee', '')
+      .not('award_amount', 'is', null)
+      .gt('award_amount', 0);
 
-    const params: any[] = [];
-    let paramIndex = 1;
-
-    // Search filter
+    // Apply filters
     if (search) {
-      query += ` AND LOWER(awardee) LIKE LOWER($${paramIndex})`;
-      params.push(`%${search}%`);
-      paramIndex++;
+      query = query.ilike('awardee', `%${search}%`);
     }
 
-    // Selected contractors filter
     if (contractors.length > 0) {
-      query += ` AND awardee = ANY($${paramIndex}::text[])`;
-      params.push(contractors);
-      paramIndex++;
+      query = query.in('awardee', contractors);
     }
 
-    // Date filters
     if (dateFrom) {
-      query += ` AND posted_date >= $${paramIndex}`;
-      params.push(dateFrom);
-      paramIndex++;
+      query = query.gte('posted_date', dateFrom);
     }
 
     if (dateTo) {
-      query += ` AND posted_date <= $${paramIndex}`;
-      params.push(dateTo);
-      paramIndex++;
+      query = query.lte('posted_date', dateTo);
     }
 
-    query += `
-      GROUP BY awardee, state, city
-      ORDER BY total_awards DESC
-    `;
+    // Execute the query to get all matching records
+    const { data, error, count } = await query;
+    if (error) throw error;
 
-    // Get total count
-    const countQuery = `
-      SELECT COUNT(DISTINCT awardee) as count
-      FROM contracts
-      WHERE awardee IS NOT NULL 
-        AND awardee != ''
-        AND award_amount IS NOT NULL
-        AND award_amount > 0
-        ${search ? ` AND LOWER(awardee) LIKE LOWER($1)` : ''}
-        ${contractors.length > 0 ? ` AND awardee = ANY($${search ? 2 : 1}::text[])` : ''}
-    `;
+    // Group by contractor
+    const contractorMap = new Map<string, {
+      contractor: string;
+      state?: string;
+      city?: string;
+      awardCount: number;
+      totalAwards: number;
+      avgAwardSize: number;
+      firstAward?: string;
+      lastAward?: string;
+    }>();
 
-    const countParams = [];
-    if (search) countParams.push(`%${search}%`);
-    if (contractors.length > 0) countParams.push(contractors);
+    data?.forEach((row: any) => {
+      const key = `${row.awardee}-${row.state || ''}-${row.city || ''}`;
+      
+      if (!contractorMap.has(key)) {
+        contractorMap.set(key, {
+          contractor: row.awardee,
+          state: row.state,
+          city: row.city,
+          awardCount: 0,
+          totalAwards: 0,
+          avgAwardSize: 0,
+          firstAward: row.posted_date,
+          lastAward: row.posted_date
+        });
+      }
 
-    const [dataResult, countResult] = await Promise.all([
-      pool.query(query + ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`, [...params, limit, (page - 1) * limit]),
-      pool.query(countQuery, countParams)
-    ]);
+      const contractor = contractorMap.get(key)!;
+      contractor.awardCount += 1;
+      contractor.totalAwards += row.award_amount;
+      
+      // Update first and last award dates
+      if (!contractor.firstAward || row.posted_date < contractor.firstAward) {
+        contractor.firstAward = row.posted_date;
+      }
+      if (!contractor.lastAward || row.posted_date > contractor.lastAward) {
+        contractor.lastAward = row.posted_date;
+      }
+    });
 
-    const total = parseInt(countResult.rows[0].count);
-    const totalPages = Math.ceil(total / limit);
+    // Calculate averages
+    contractorMap.forEach(contractor => {
+      contractor.avgAwardSize = contractor.totalAwards / contractor.awardCount;
+    });
 
-    // Parse contractor data
-    const contractorsData = dataResult.rows.map(row => ({
-      contractor: row.awardee,
-      location: row.state ? `${row.city || ''}, ${row.state}`.trim() : '--',
-      totalAwards: parseFloat(row.total_awards),
-      awardCount: parseInt(row.award_count),
-      avgAwardSize: parseFloat(row.avg_award_size),
-      firstAward: row.first_award,
-      lastAward: row.last_award
+    // Convert to array and sort by total awards
+    const allContractors = Array.from(contractorMap.values())
+      .sort((a, b) => b.totalAwards - a.totalAwards);
+
+    // Apply pagination
+    const start = (page - 1) * limit;
+    const paginatedContractors = allContractors.slice(start, start + limit);
+
+    // Format the response
+    const contractorsData = paginatedContractors.map(contractor => ({
+      contractor: contractor.contractor,
+      location: contractor.state ? `${contractor.city || ''}, ${contractor.state}`.trim() : '--',
+      totalAwards: contractor.totalAwards,
+      awardCount: contractor.awardCount,
+      avgAwardSize: contractor.avgAwardSize,
+      firstAward: contractor.firstAward,
+      lastAward: contractor.lastAward
     }));
+
+    const total = allContractors.length;
+    const totalPages = Math.ceil(total / limit);
 
     return NextResponse.json({
       contractors: contractorsData,

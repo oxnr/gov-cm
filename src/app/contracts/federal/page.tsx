@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { MagnifyingGlass, Funnel, CaretDown, ArrowSquareOut, CircleNotch, MapPin } from '@phosphor-icons/react';
+import { MagnifyingGlass, Funnel, CaretDown, CircleNotch, MapPin } from '@phosphor-icons/react';
 import { format } from 'date-fns';
 import { Contract, ContractFilters } from '@/types/contract';
 import { cn } from '@/lib/utils';
@@ -97,7 +97,7 @@ export default function FederalContractsPage() {
     setSearchTimeout(timeout);
   };
 
-  const handleFilterChange = (key: keyof ContractFilters, value: any) => {
+  const handleFilterChange = (key: keyof ContractFilters, value: string | number | undefined) => {
     setFilters(prev => ({ ...prev, [key]: value }));
     setCurrentPage(1);
   };
@@ -173,7 +173,7 @@ export default function FederalContractsPage() {
                     location_lat: lat,
                     location_lng: lng,
                     location_radius: radius
-                  } as any));
+                  } as ContractFilters & {location_lat: number; location_lng: number; location_radius: number}));
                   setCurrentPage(1);
                 }}
                 initialLocation={locationFilter ? { lat: locationFilter.lat, lng: locationFilter.lng } : undefined}
@@ -186,7 +186,8 @@ export default function FederalContractsPage() {
                       setLocationFilter(null);
                       setContractForMap(null);
                       setFilters(prev => {
-                        const { location_lat, location_lng, location_radius, ...rest } = prev as any;
+                        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                        const { location_lat, location_lng, location_radius, ...rest } = prev as ContractFilters & {location_lat?: number; location_lng?: number; location_radius?: number};
                         return rest;
                       });
                       setCurrentPage(1);

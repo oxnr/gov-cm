@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Table, ChartBar, MapPin, Buildings, Hash, CircleNotch, Check, Funnel, CaretDown, MagnifyingGlass } from '@phosphor-icons/react';
+import { Table, ChartBar, MapPin, Buildings, Hash, CircleNotch, Funnel, CaretDown } from '@phosphor-icons/react';
 import { cn } from '@/lib/utils';
 import SpendDetailModal from '@/components/SpendDetailModal';
 import { US_STATES } from '@/lib/states';
@@ -63,7 +63,7 @@ export default function SpendAnalysisPage() {
         const response = await fetch('/api/contracts/filters');
         const data = await response.json();
         const options: FilterOption[] = [];
-        data.agencies.forEach((agency: any) => {
+        data.agencies.forEach((agency: {name: string; subTiers: string[]}) => {
           options.push({ value: agency.name, label: agency.name });
           agency.subTiers.forEach((subTier: string) => {
             if (subTier !== agency.name) {
