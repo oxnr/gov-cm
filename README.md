@@ -32,7 +32,7 @@ A modern web application for discovering, analyzing, and tracking government con
 
 ```bash
 git clone <repository-url>
-cd govchime-app
+cd GovchimeCM
 ```
 
 ### 2. Install dependencies
@@ -94,7 +94,6 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
 ## Project Structure
 
 ```
-govchime-app/
 ├── src/
 │   ├── app/              # Next.js app directory
 │   │   ├── api/          # API routes

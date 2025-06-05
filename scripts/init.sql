@@ -74,13 +74,13 @@ CREATE MATERIALIZED VIEW IF NOT EXISTS agency_spend_analysis AS
 SELECT 
     department_agency,
     sub_tier,
-    EXTRACT(YEAR FROM posted_date) as year,
+    EXTRACT(YEAR FROM award_date) as year,
     COUNT(*) as contract_count,
     SUM(award_amount) as total_amount,
     AVG(award_amount) as avg_amount
 FROM contracts
 WHERE award_amount IS NOT NULL
-GROUP BY department_agency, sub_tier, EXTRACT(YEAR FROM posted_date);
+GROUP BY department_agency, sub_tier, EXTRACT(YEAR FROM award_date);
 
 CREATE INDEX idx_agency_spend_dept ON agency_spend_analysis(department_agency);
 CREATE INDEX idx_agency_spend_year ON agency_spend_analysis(year);
@@ -93,8 +93,8 @@ SELECT
     COUNT(*) as award_count,
     SUM(award_amount) as total_awards,
     AVG(award_amount) as avg_award_size,
-    MIN(posted_date) as first_award,
-    MAX(posted_date) as last_award
+    MIN(award_date) as first_award,
+    MAX(award_date) as last_award
 FROM contracts
 WHERE awardee IS NOT NULL AND award_amount IS NOT NULL
 GROUP BY awardee, state, city;

@@ -29,8 +29,7 @@ vercel
 Option B: Using Vercel Dashboard
 1. Go to https://vercel.com/new
 2. Import your GitHub repository: `oxnr/gov-cm`
-3. Select the `govchime-app` directory as the root directory
-4. Vercel will auto-detect Next.js
+3. Vercel will auto-detect Next.js
 
 ### 2. Configure Environment Variables
 
@@ -44,7 +43,7 @@ Option B: Using Vercel Dashboard
 - Build Command: `npm run build` (default)
 - Output Directory: `.next` (default)
 - Install Command: `npm install` (default)
-- Root Directory: `./` (since we're in govchime-app)
+- Root Directory: `./`
 
 ### 4. Deploy
 
