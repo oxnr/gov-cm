@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Execute the query to get all matching records
-    const { data, error, count } = await query;
+    const { data, error } = await query;
     if (error) throw error;
 
     // Group by contractor
@@ -53,7 +53,7 @@ export async function GET(request: NextRequest) {
       lastAward?: string;
     }>();
 
-    data?.forEach((row: any) => {
+    data?.forEach((row) => {
       const key = `${row.awardee}-${row.state || ''}-${row.city || ''}`;
       
       if (!contractorMap.has(key)) {

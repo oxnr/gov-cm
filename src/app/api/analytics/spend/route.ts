@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
         contract_count: number;
       }>();
 
-      data?.forEach((row: any) => {
+      data?.forEach((row) => {
         const year = row.posted_date ? new Date(row.posted_date).getFullYear() : 2020;
         const key = row.state;
         
@@ -124,7 +124,7 @@ export async function GET(request: NextRequest) {
         contract_count: number;
       }>();
 
-      data?.forEach((row: any) => {
+      data?.forEach((row) => {
         const year = new Date(row.posted_date).getFullYear();
         const key = row.department_agency;
         
@@ -212,7 +212,7 @@ export async function GET(request: NextRequest) {
         contract_count: number;
       }>();
 
-      data?.forEach((row: any) => {
+      data?.forEach((row) => {
         const year = new Date(row.posted_date).getFullYear();
         const key = row.naics_code;
         

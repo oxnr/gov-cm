@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     if (type === 'naics' && code) {
       // Try exact match first
-      let { data, error } = await supabase
+      const { data, error } = await supabase
         .from('naics_codes')
         .select('code, title')
         .eq('code', code)
