@@ -24,13 +24,20 @@ export async function GET(request: NextRequest) {
 
     if (type === 'naics' && code) {
       // Try exact match first
-      const { data, error } = await supabase
-        .from('naics_codes')
-        .select('code, title')
-        .eq('code', code)
-        .single();
-      
-      if (error && error.code !== 'PGRST116') throw error;
+      let data = null;
+      try {
+        const result = await supabase
+          .from('naics_codes')
+          .select('code, title')
+          .eq('code', code)
+          .single();
+        
+        if (result.error && result.error.code !== 'PGRST116') throw result.error;
+        data = result.data;
+      } catch (err) {
+        // Single row not found is ok, other errors should throw
+        if (err instanceof Error && !err.message.includes('PGRST116')) throw err;
+      }
       
       // If no exact match, try prefix match for hierarchical codes
       if (!data && code.length >= 2) {

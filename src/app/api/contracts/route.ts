@@ -92,8 +92,10 @@ export async function GET(request: NextRequest) {
     query = query.order(sortColumn, { ascending, nullsFirst: false });
 
     // Apply pagination
-    const offset = (filters.page - 1) * filters.limit;
-    query = query.range(offset, offset + filters.limit - 1);
+    const page = filters.page || 1;
+    const limit = filters.limit || 25;
+    const offset = (page - 1) * limit;
+    query = query.range(offset, offset + limit - 1);
 
     // Execute query
     const { data: contracts, error, count } = await query;
@@ -106,7 +108,7 @@ export async function GET(request: NextRequest) {
     let filteredContracts = contracts || [];
     if (locationLat && locationLng && locationRadius) {
       filteredContracts = contracts?.filter(contract => {
-        const coords = getContractCoordinates(contract);
+        const coords = getContractCoordinates(contract.city, contract.state);
         if (!coords) return false;
         
         const distance = calculateDistance(
@@ -122,10 +124,10 @@ export async function GET(request: NextRequest) {
 
     const response: ContractsResponse = {
       contracts: filteredContracts,
-      totalCount: count || 0,
-      page: filters.page,
-      limit: filters.limit,
-      totalPages: Math.ceil((count || 0) / filters.limit),
+      total: count || 0,
+      page: page,
+      limit: limit,
+      total_pages: Math.ceil((count || 0) / limit),
     };
 
     return NextResponse.json(response);
